@@ -1,0 +1,81 @@
+spring:
+  application:
+    name: jewelry-workshop-api
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/jewelry_workshop
+    username: postgres
+    password: 197326
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          batch_size: 20
+    show-sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ntrukhina005@gmail.com
+    password: ydsyryfckcajfrwk  # <-- Не пароль от почты, а специальный "App Password"
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  redis:
+    host: localhost
+    port: 6379
+    # password: redis-password
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+  security:
+    password:
+      min-length: 6
+      client-change-min-length: 8
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+logging:
+  level:
+    com.jewelry.workshop: DEBUG
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+app:
+  jwt:
+    secret: LCiw+ElTEH1oiQYUPm+1qkvCaCbP6Lpe1eLsKh8Lpgi02gcvWlRpI5OxULIVIVwlp0+615OtoNimgmzp83cWew==
+    expiration: 900000      # 15 минут
+    refresh:
+      expiration: 604800000 # 7 дней

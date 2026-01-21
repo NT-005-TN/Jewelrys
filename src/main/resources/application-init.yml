@@ -1,0 +1,6 @@
+app:
+  init:
+    admin:
+      username: "admin"
+      email: "admin@jewelry.local"
+      password: "admin123"

@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: jewelry-workshop-db
+    environment:
+      POSTGRES_DB: jewelry_workshop
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 197326
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workshop_admin"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+
+networks:
+  work_shop-network:
+    driver: bridge
