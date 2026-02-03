@@ -76,6 +76,11 @@ springdoc:
 app:
   jwt:
     secret: LCiw+ElTEH1oiQYUPm+1qkvCaCbP6Lpe1eLsKh8Lpgi02gcvWlRpI5OxULIVIVwlp0+615OtoNimgmzp83cWew==
-    expiration: 900000      # 15 минут
+    expiration: 900000
     refresh:
-      expiration: 604800000 # 7 дней
+      expiration: 604800000
+  init:
+    admin:
+      username: "admin"
+      email: "admin@jewelry.local"
+      password: "admin123"
