@@ -1,0 +1,13 @@
+.git
+.github
+.gitignore
+.gradle
+build
+out
+*.log
+.idea
+*.iml
+.env
+.env.*
+!.env.example
+README.md
