@@ -15,6 +15,12 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
     private final UserRepository userRepository;
 
+    @Transactional(readOnly = true)
+    public UserDetailsImpl loadUserById(Long id) {
+        return UserDetailsImpl.build(userRepository.findById(id)
+                .orElseThrow(() -> new UsernameNotFoundException("Пользователь не найден")));
+    }
+
     @Override
     @Transactional
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {

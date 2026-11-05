@@ -30,6 +30,7 @@ public class ClientProfileDTO {
     private String phone;
 
     @Schema(description = "Является ли клиент постоянным", example = "false")
+    @lombok.Builder.Default
     private Boolean isPermanent = Boolean.FALSE;
 
     @Schema(description = "Полное имя клиента", example = "Петров Иван Сергеевич")

@@ -17,6 +17,8 @@ out/
 !**/src/test/**/out/
 
 *.env
+.env.*
+!.env.example
 
 ### Eclipse ###
 .apt_generated

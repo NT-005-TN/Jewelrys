@@ -16,7 +16,7 @@ public interface OrderItemRepository extends JpaRepository<OrderItem, Long> {
     @Query("""
             SELECT oi.product.id, SUM(oi.quantity) as totalQuantity, SUM(oi.totalPrice) as totalRevenue
             FROM OrderItem oi
-            WHERE oi.createdAt BETWEEN :startDate and :endDate
+            WHERE oi.order.status IN ('COMPLETED', 'DELIVERED') AND oi.order.orderDatetime BETWEEN :startDate and :endDate
             GROUP BY oi.product.id
             ORDER BY totalQuantity DESC
             """)

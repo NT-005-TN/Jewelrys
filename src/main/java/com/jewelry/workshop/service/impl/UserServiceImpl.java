@@ -57,10 +57,10 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponseDTO createUser(UserCreateDTO dto) {
         if(userRepository.existsByEmail(dto.getEmail())) {
-            throw new RuntimeException("Пользователь с email " + dto.getEmail() + " уже существует");
+            throw new IllegalArgumentException("Пользователь с email " + dto.getEmail() + " уже существует");
         }
         if (userRepository.existsByUsername(dto.getUsername())) {
-            throw new RuntimeException("Имя пользователя " + dto.getUsername() + " уже занято");
+            throw new IllegalArgumentException("Имя пользователя " + dto.getUsername() + " уже занято");
         }
 
         User user = new User();
@@ -100,7 +100,7 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public UserResponseDTO getUserById(Long id) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Пользователь с ID " + id + " не найден"));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Пользователь с ID " + id + " не найден"));
 
         Long clientId = null;
         Long employeeId = null;
@@ -123,42 +123,22 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponseDTO updateUser(Long id, UserUpdateDTO dto) {
         User existingUser = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Пользователь с ID " + id + " не найден"));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Пользователь с ID " + id + " не найден"));
 
         if (!existingUser.getEmail().equals(dto.getEmail()) &&
                 userRepository.existsByEmail(dto.getEmail())) {
-            throw new RuntimeException("Email " + dto.getEmail() + " уже используется");
+            throw new IllegalArgumentException("Email " + dto.getEmail() + " уже используется");
         }
 
         if (!existingUser.getUsername().equals(dto.getUsername()) &&
                 userRepository.existsByUsername(dto.getUsername())) {
-            throw new RuntimeException("Имя пользователя " + dto.getUsername() + " уже занято");
+            throw new IllegalArgumentException("Имя пользователя " + dto.getUsername() + " уже занято");
         }
 
         User.Role newRole = User.Role.valueOf(dto.getRole());
         boolean roleChanged = !existingUser.getRole().equals(newRole);
 
-        if (roleChanged) {
-            if (existingUser.getRole() == User.Role.CLIENT) {
-                clientRepository.deleteByUserId(existingUser.getId());
-            } else {
-                employeeRepository.deleteByUserId(existingUser.getId());
-            }
-
-            if (newRole == User.Role.CLIENT) {
-                Client client = new Client();
-                client.setUser(existingUser);
-                client.setFirstName(dto.getUsername());
-                client.setLastName("Клиент");
-                clientRepository.save(client);
-            } else {
-                Employee employee = new Employee();
-                employee.setUser(existingUser);
-                employee.setPosition("Сотрудник");
-                employee.setDepartment("Администрация");
-                employeeRepository.save(employee);
-            }
-        }
+        if (roleChanged) ensureProfile(existingUser, newRole, dto.getUsername());
 
         existingUser.setUsername(dto.getUsername());
         existingUser.setEmail(dto.getEmail());
@@ -185,11 +165,11 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserDeleteResponseDTO deleteUser(Long id, Long currentUserId) {
         if (id.equals(currentUserId)) {
-            throw new RuntimeException("Нельзя деактивировать самого себя");
+            throw new IllegalArgumentException("Нельзя деактивировать самого себя");
         }
 
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Пользователь с ID " + id + " не найден"));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Пользователь с ID " + id + " не найден"));
 
         user.setEnabled(false);
         userRepository.save(user);
@@ -203,7 +183,7 @@ public class UserServiceImpl implements UserService {
     @Transactional
     public UserResponseDTO updateUserRole(Long id, String newRoleStr) {
         User user = userRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Пользователь с ID " + id + " не найден"));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Пользователь с ID " + id + " не найден"));
 
         User.Role newRole = User.Role.valueOf(newRoleStr);
         if (user.getRole().equals(newRole)) {
@@ -215,27 +195,7 @@ public class UserServiceImpl implements UserService {
             return userMapper.toDto(user, clientId, employeeId);
         }
 
-        // Сначала удаляем старый профиль
-        if (user.getRole() == User.Role.CLIENT) {
-            clientRepository.deleteByUserId(user.getId());
-        } else {
-            employeeRepository.deleteByUserId(user.getId());
-        }
-
-        // Создаем новый профиль
-        if (newRole == User.Role.CLIENT) {
-            Client client = new Client();
-            client.setUser(user);
-            client.setFirstName(user.getUsername());
-            client.setLastName("Клиент");
-            clientRepository.save(client);
-        } else {
-            Employee employee = new Employee();
-            employee.setUser(user);
-            employee.setPosition("Сотрудник");
-            employee.setDepartment("Администрация");
-            employeeRepository.save(employee);
-        }
+        ensureProfile(user, newRole, user.getUsername());
 
         user.setRole(newRole);
         User savedUser = userRepository.save(user);
@@ -251,5 +211,15 @@ public class UserServiceImpl implements UserService {
         }
 
         return userMapper.toDto(savedUser, clientId, employeeId);
+    }
+    private void ensureProfile(User user, User.Role role, String name) {
+        // Historical client records and orders must survive role changes.
+        if (role == User.Role.CLIENT && clientRepository.findByUserId(user.getId()).isEmpty()) {
+            Client client = new Client(); client.setUser(user);
+            client.setFirstName(name); client.setLastName("Клиент"); clientRepository.save(client);
+        } else if (role != User.Role.CLIENT && employeeRepository.findByUserId(user.getId()).isEmpty()) {
+            Employee employee = new Employee(); employee.setUser(user);
+            employee.setPosition("Сотрудник"); employee.setDepartment("Администрация"); employeeRepository.save(employee);
+        }
     }
 }

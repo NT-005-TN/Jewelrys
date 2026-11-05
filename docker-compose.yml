@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -7,13 +5,23 @@ services:
     environment:
       POSTGRES_DB: jewelry_workshop
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: 197326
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - workshop-net
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,9 +36,18 @@ services:
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/jewelry_workshop
       SPRING_DATASOURCE_USERNAME: postgres
-      SPRING_DATASOURCE_PASSWORD: 197326
-      APP_JWT_SECRET: LCiw+ElTEH1oiQYUPm+1qkvCaCbP6Lpe1eLsKh8Lpgi02gcvWlRpI5OxULIVIVwlp0+615OtoNimgmzp83cWew==
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      APP_JWT_SECRET: ${APP_JWT_SECRET:?Set APP_JWT_SECRET}
+      SPRING_DATA_REDIS_HOST: redis
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080/api}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@jewelry.local}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-default}
     depends_on:
+      redis:
+        condition: service_healthy
       postgres:
         condition: service_healthy
     networks:

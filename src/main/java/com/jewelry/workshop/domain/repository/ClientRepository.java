@@ -15,6 +15,8 @@ import java.util.Optional;
 @Repository
 public interface ClientRepository extends JpaRepository<Client, Long> {
 
+    long countByCreatedAtBetween(Instant start, Instant end);
+
     Optional<Client> findByUserId(Long userId);
     Optional<Client> findByPhone(String phone);
 
@@ -29,8 +31,8 @@ public interface ClientRepository extends JpaRepository<Client, Long> {
     @Query("""
     SELECT c FROM Client c
     WHERE
-    (:lastName IS NULL OR FUNCTION('LOWER', CAST(c.lastName AS text)) LIKE LOWER(CONCAT('%', CAST(:lastName AS text), '%')))
-    AND (:firstName IS NULL OR FUNCTION('LOWER', CAST(c.firstName AS text)) LIKE LOWER(CONCAT('%', CAST(:firstName AS text), '%')))
+    (:lastName IS NULL OR LOWER(c.lastName) LIKE LOWER(CONCAT('%', CAST(:lastName AS string), '%')))
+    AND (:firstName IS NULL OR LOWER(c.firstName) LIKE LOWER(CONCAT('%', CAST(:firstName AS string), '%')))
     AND (:phonePattern IS NULL OR c.phone LIKE :phonePattern)
     AND (:isPermanent IS NULL OR c.isPermanent = :isPermanent)
     AND (:minOrders IS NULL OR c.id IN (

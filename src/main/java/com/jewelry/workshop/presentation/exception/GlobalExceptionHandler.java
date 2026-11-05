@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(RuntimeException.class)
+    @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public ResponseEntity<ErrorResponseDTO> handleRuntimeException(RuntimeException ex, HttpServletRequest request) {
         log.warn("Bad request error at {}: {}", request.getRequestURI(), ex.getMessage());
         ErrorResponseDTO error = new ErrorResponseDTO(
@@ -28,6 +28,34 @@ public class GlobalExceptionHandler {
                 request.getRequestURI()
         );
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
+    }
+
+    @ExceptionHandler({org.springframework.dao.DataIntegrityViolationException.class,
+            org.springframework.dao.OptimisticLockingFailureException.class,
+            org.springframework.dao.PessimisticLockingFailureException.class})
+    public ResponseEntity<ErrorResponseDTO> conflict(Exception ex, HttpServletRequest request) {
+        return ResponseEntity.status(409).body(new ErrorResponseDTO(LocalDateTime.now(), 409,
+                "CONFLICT", "Конфликт данных. Обновите данные и повторите запрос.", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(jakarta.persistence.EntityNotFoundException.class)
+    public ResponseEntity<ErrorResponseDTO> notFound(Exception ex, HttpServletRequest request) {
+        return ResponseEntity.status(404).body(new ErrorResponseDTO(LocalDateTime.now(), 404,
+                "NOT_FOUND", "Объект не найден", request.getRequestURI()));
+    }
+
+    @ExceptionHandler(org.springframework.security.core.AuthenticationException.class)
+    public ResponseEntity<ErrorResponseDTO> authentication(Exception ex, HttpServletRequest request) {
+        return ResponseEntity.status(401).body(new ErrorResponseDTO(LocalDateTime.now(), 401,
+                "UNAUTHORIZED", "Требуется повторная аутентификация", request.getRequestURI()));
+    }
+
+    @ExceptionHandler({org.springframework.http.converter.HttpMessageNotReadableException.class,
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class})
+    public ResponseEntity<ErrorResponseDTO> malformed(Exception ex, HttpServletRequest request) {
+        return ResponseEntity.badRequest().body(new ErrorResponseDTO(LocalDateTime.now(), 400,
+                "INVALID_REQUEST", "Некорректный запрос", request.getRequestURI()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

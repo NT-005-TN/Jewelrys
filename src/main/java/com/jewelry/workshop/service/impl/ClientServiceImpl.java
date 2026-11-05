@@ -50,7 +50,8 @@ public class ClientServiceImpl implements ClientService {
 
         Long orderCount = orderRepository.countOrdersByClientId(client.getId());
         BigDecimal totalSpent = orderRepository.getTotalSpentByClientId(client.getId());
-        LocalDateTime lastOrderDate = orderRepository.getLastOrderDateByClientId(client.getId());
+        java.time.Instant last = orderRepository.getLastOrderDateByClientId(client.getId());
+        LocalDateTime lastOrderDate = last == null ? null : LocalDateTime.ofInstant(last, java.time.ZoneOffset.UTC);
 
         return ClientProfileDTO.builder()
                 .firstName(client.getFirstName())
@@ -66,6 +67,7 @@ public class ClientServiceImpl implements ClientService {
     }
 
     @Override
+    @Transactional
     public ClientProfileDTO updateOwnProfile(Long userId, ClientUpdateDTO dto) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException("Пользователь не найден"));
@@ -100,7 +102,8 @@ public class ClientServiceImpl implements ClientService {
 
         Long orderCount = orderRepository.countOrdersByClientId(client.getId());
         BigDecimal totalSpent = orderRepository.getTotalSpentByClientId(client.getId());
-        LocalDateTime lastOrderDate = orderRepository.getLastOrderDateByClientId(client.getId());
+        java.time.Instant last = orderRepository.getLastOrderDateByClientId(client.getId());
+        LocalDateTime lastOrderDate = last == null ? null : LocalDateTime.ofInstant(last, java.time.ZoneOffset.UTC);
 
         return ClientProfileDTO.builder()
                 .firstName(client.getFirstName())
@@ -134,13 +137,12 @@ public class ClientServiceImpl implements ClientService {
         }
 
         if (passwordUtil.matches(dto.getNewPassword(), user.getPasswordHash())) {
-            throw new RuntimeException("Новый пароль не может совпадать со старым");
+            throw new IllegalArgumentException("Новый пароль не может совпадать со старым");
         }
 
         user.setPasswordHash(passwordUtil.encode(dto.getNewPassword()));
         userRepository.save(user);
 
-        redisTemplate.delete("refresh_token:" + user.getEmail());
     }
 
     @Override

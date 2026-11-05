@@ -13,7 +13,7 @@ import java.time.Instant;
 @Table(name = "users")
 @Getter
 @Setter
-@ToString
+@ToString(exclude = {"passwordHash", "verificationToken", "passwordResetToken", "refreshTokenHash"})
 public class User {
 
     @Id
@@ -58,6 +58,32 @@ public class User {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    @Version
+    private long version;
+    @Column(name = "token_version", nullable = false)
+    private long tokenVersion;
+    @Column(name = "refresh_token_hash", length = 64)
+    private String refreshTokenHash;
+
+    public void revokeSessions() {
+        tokenVersion++;
+        refreshTokenHash = null;
+    }
+
+    public void setEnabled(Boolean value) {
+        if (!java.util.Objects.equals(enabled, value)) revokeSessions();
+        enabled = value;
+    }
+    public void setRole(Role value) {
+        if (role != value) revokeSessions();
+        role = value;
+    }
+
+    public void setPasswordHash(String value) {
+        if (!java.util.Objects.equals(passwordHash, value)) revokeSessions();
+        passwordHash = value;
+    }
 
     public boolean isEnabled() {
         return Boolean.TRUE.equals(enabled);

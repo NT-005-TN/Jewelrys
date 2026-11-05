@@ -115,7 +115,7 @@ public class OrderController {
     private Long getClientId(UserDetailsImpl userDetails) {
         return clientRepository.findByUserId(userDetails.getId())
                 .map(Client::getId)
-                .orElseThrow(() -> new RuntimeException("Профиль клиента не найден"));
+                .orElseThrow(() -> new com.jewelry.workshop.presentation.exception.ClientProfileNotFoundException());
     }
 
     @GetMapping
@@ -153,7 +153,7 @@ public class OrderController {
         if ("CLIENT".equals(role)) {
             clientId = clientRepository.findByUserId(userDetails.getId())
                     .map(Client::getId)
-                    .orElseThrow(() -> new RuntimeException("Профиль клиента не найден"));
+                    .orElseThrow(() -> new com.jewelry.workshop.presentation.exception.ClientProfileNotFoundException());
         }
 
         OrderResponseDTO order = orderService.getOrderById(id, clientId);

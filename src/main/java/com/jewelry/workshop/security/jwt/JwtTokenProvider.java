@@ -10,7 +10,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
-import java.time.Duration;
+import java.util.UUID;
 import java.util.Date;
 
 
@@ -20,6 +20,7 @@ public class JwtTokenProvider {
     @Value("${app.jwt.secret}")
     private String jwtSecret;
 
+    @Getter
     @Value("${app.jwt.expiration}")
     private long jwtExpiration;
 
@@ -27,39 +28,59 @@ public class JwtTokenProvider {
     @Value("${app.jwt.refresh.expiration}")
     private long refreshExpiration;
 
-    private Key key() {
+    private javax.crypto.SecretKey key() {
         return Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
     }
 
     public String generateToken(Authentication authentication){
         UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
         return Jwts.builder()
-                .setSubject(userPrincipal.getEmail())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(new Date().getTime() + jwtExpiration))
-                .signWith(key(), SignatureAlgorithm.HS512)
+                .subject(userPrincipal.getId().toString())
+                .claim("version", userPrincipal.getUser().getTokenVersion())
+                .claim("token_type", "access")
+                .id(UUID.randomUUID().toString())
+                .issuedAt(new Date())
+                .expiration(new Date(new Date().getTime() + jwtExpiration))
+                .signWith(key(), Jwts.SIG.HS512)
                 .compact();
     }
 
     public String generateRefreshToken(Authentication authentication){
        UserDetailsImpl userPrincipal = (UserDetailsImpl) authentication.getPrincipal();
         return Jwts.builder()
-                .setSubject(userPrincipal.getEmail())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(new Date().getTime() + refreshExpiration))
-                .signWith(key(), SignatureAlgorithm.HS512)
+                .subject(userPrincipal.getId().toString())
+                .claim("version", userPrincipal.getUser().getTokenVersion())
+                .claim("token_type", "refresh")
+                .id(UUID.randomUUID().toString())
+                .issuedAt(new Date())
+                .expiration(new Date(new Date().getTime() + refreshExpiration))
+                .signWith(key(), Jwts.SIG.HS512)
                 .compact();
     }
 
-    public String getEmailFromJwt(String token){
-        return Jwts.parser().setSigningKey(key()).build()
-                .parseClaimsJws(token).getBody().getSubject();
+    public String getSubject(String token){
+        return Jwts.parser().verifyWith(key()).build()
+                .parseSignedClaims(token).getPayload().getSubject();
     }
 
-    public boolean validateToken(String token){
+    public boolean matchesVersion(String token, long version) {
+        Number value = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token)
+                .getPayload().get("version", Number.class);
+        return value != null && value.longValue() == version;
+    }
+
+    public boolean validateToken(String token) {
+        return validateTokenType(token, "access");
+    }
+
+    public boolean validateRefreshToken(String token) {
+        return validateTokenType(token, "refresh");
+    }
+
+    private boolean validateTokenType(String token, String expectedType){
         try{
-            Jwts.parser().setSigningKey(key()).build().parseClaimsJws(token);
-            return true;
+            Claims claims = Jwts.parser().verifyWith(key()).build().parseSignedClaims(token).getPayload();
+            return expectedType.equals(claims.get("token_type", String.class));
         } catch (JwtException | IllegalArgumentException e){
             return false;
         }

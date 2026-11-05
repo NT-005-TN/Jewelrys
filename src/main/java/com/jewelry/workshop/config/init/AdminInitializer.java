@@ -6,6 +6,7 @@ import com.jewelry.workshop.util.PasswordUtil;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Configuration;
@@ -20,25 +21,35 @@ public class AdminInitializer implements ApplicationRunner {
     private final UserRepository userRepository;
     private final PasswordUtil passwordUtil;
 
+    @Value("${app.init.admin.username}")
+    private String username;
+    @Value("${app.init.admin.email}")
+    private String email;
+    @Value("${app.init.admin.password}")
+    private String password;
+
     @Override
     @Transactional
     public void run(ApplicationArguments args) {
-        if(userRepository.existsByUsername("admin") || userRepository.existsByEmail("admin@jewelry.local")) {
+        if(userRepository.existsByUsername(username) || userRepository.existsByEmail(email)) {
             log.info("✅ Администратор уже существует. Инициализация пропущена.");
             return;
         }
 
+        if (password == null || password.length() < 12) {
+            throw new IllegalArgumentException("ADMIN_PASSWORD must contain at least 12 characters");
+        }
         User admin = new User();
-        admin.setUsername("admin");
-        admin.setEmail("admin@jewelry.local");
-        admin.setPasswordHash(passwordUtil.encode("SecureAdminPass123!"));
+        admin.setUsername(username);
+        admin.setEmail(email);
+        admin.setPasswordHash(passwordUtil.encode(password));
         admin.setRole(User.Role.ADMIN);
         admin.setEnabled(true);
         admin.setEmailVerified(true);
 
         userRepository.save(admin);
         log.warn("⚠️⚠️⚠️ СОЗДАН ПЕРВЫЙ АДМИНИСТРАТОР! ⚠️⚠️⚠️");
-        log.warn("Логин: admin@jewelry.local");
+
         log.warn("Пароль: изменен после первого входа");
         log.warn("❗ НЕМЕДЛЕННО СМЕНИТЕ ПАРОЛЬ ПОСЛЕ ПЕРВОГО ВХОДА!");
     }

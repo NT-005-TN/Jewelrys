@@ -37,8 +37,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(7);
             try {
                 if(jwtTokenProvider.validateToken(token)){
-                    String email = jwtTokenProvider.getEmailFromJwt(token);
-                    UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                    var userDetails = userDetailsService.loadUserById(Long.valueOf(jwtTokenProvider.getSubject(token)));
+                    if (!jwtTokenProvider.matchesVersion(token, userDetails.getUser().getTokenVersion())) {
+                        throw new org.springframework.security.authentication.BadCredentialsException("Session revoked");
+                    }
+                    new org.springframework.security.authentication.AccountStatusUserDetailsChecker()
+                            .check(userDetails);
 
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(

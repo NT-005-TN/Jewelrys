@@ -65,12 +65,9 @@ public class ReportController {
             content = @Content(schema = @Schema(implementation = ErrorResponseDTO.class)))
     @ApiResponse(responseCode = "403", description = "Доступ запрещён",
             content = @Content(schema = @Schema(implementation = ErrorResponseDTO.class)))
-    public ResponseEntity<List<Map<String, Object>>> getProductReport(
+    public ResponseEntity<List<com.jewelry.workshop.domain.model.dto.report.ProductReportItemDTO>> getProductReport(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant start,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) Instant end) {
-        Object report = reportService.getProductReport(start, end);
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> typedReport = (List<Map<String, Object>>) report;
-        return ResponseEntity.ok(typedReport);
+        return ResponseEntity.ok(reportService.getProductReport(start, end));
     }
 }

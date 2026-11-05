@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.Data;
 
+@lombok.EqualsAndHashCode(callSuper = true)
 @Data
 @Schema(description = "DTO для запроса регистрации нового клиента")
 public class RegisterRequestDTO extends BaseClientInfoDTO {

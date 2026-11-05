@@ -32,7 +32,7 @@ public class MaterialServiceImpl implements MaterialService {
     @Transactional
     public MaterialResponseDTO createMaterial(MaterialCreateDTO dto) {
         if (materialRepository.existsByName(dto.getName())) {
-            throw new RuntimeException("Материал с названием '" + dto.getName() + "' уже существует");
+            throw new IllegalArgumentException("Материал с названием '" + dto.getName() + "' уже существует");
         }
         Material material = new Material();
         material.setName(dto.getName());
@@ -50,7 +50,7 @@ public class MaterialServiceImpl implements MaterialService {
         if (dto.getName() != null) {
             if (!material.getName().equals(dto.getName()) &&
                     materialRepository.existsByName(dto.getName())) {
-                throw new RuntimeException("Материал с названием '" + dto.getName() + "' уже существует");
+                throw new IllegalArgumentException("Материал с названием '" + dto.getName() + "' уже существует");
             }
             material.setName(dto.getName());
         }
@@ -69,7 +69,7 @@ public class MaterialServiceImpl implements MaterialService {
             throw new EntityNotFoundException("Материал с ID " + id + " не найден");
         }
         if (materialRepository.isMaterialInUse(id)) {
-            throw new RuntimeException("Нельзя удалить материал, используемый в изделиях");
+            throw new IllegalArgumentException("Нельзя удалить материал, используемый в изделиях");
         }
         materialRepository.deleteById(id);
     }

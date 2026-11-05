@@ -17,6 +17,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new com.jewelry.workshop.util.PaginationInterceptor());
         registry.addInterceptor(rateLimitInterceptor);
     }
 }

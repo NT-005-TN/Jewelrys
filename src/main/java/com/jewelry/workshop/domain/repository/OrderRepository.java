@@ -15,8 +15,16 @@ import java.util.List;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Order e where e.id = :id")
+    java.util.Optional<Order> findLockedById(@Param("id") Long id);
+
     List<Order> findByStatus(String status);
-    List<Order> findByOrderDatetimeBetween(LocalDateTime start, LocalDateTime end);
+    @Query("select coalesce(sum(o.discountAmount), 0) from Order o where o.status in ('COMPLETED','DELIVERED') and o.orderDatetime between :start and :end")
+    BigDecimal sumDiscounts(@Param("start") Instant start, @Param("end") Instant end);
+    @Query("select coalesce(sum(o.finalAmount), 0) from Order o where o.status in ('COMPLETED','DELIVERED')")
+    BigDecimal lifetimeRevenue();
+    List<Order> findByOrderDatetimeBetween(Instant start, Instant end);
 
     Page<Order> findByClientIdAndStatusNot(Long clientId, String status, Pageable pageable);
     Page<Order> findByClientId(Long ClientId, Pageable pageable);
@@ -27,7 +35,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
                SUM(o.finalAmount) as dailyRevenue,
                AVG(o.finalAmount) as avgOrderValue
         FROM Order o 
-        WHERE o.orderDatetime >= :startDate
+        WHERE o.status IN ('COMPLETED', 'DELIVERED') AND o.orderDatetime >= :startDate
         GROUP BY DATE(CAST(o.orderDatetime AS date))
         ORDER BY orderDate DESC
         """)
@@ -40,7 +48,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
            MAX(o.orderDatetime) as lastOrderDate
     FROM Order o 
     JOIN o.client c 
-    WHERE o.orderDatetime BETWEEN :startDate AND :endDate
+    WHERE o.status IN ('COMPLETED', 'DELIVERED') AND o.orderDatetime BETWEEN :startDate AND :endDate
     GROUP BY o.client.id, c.lastName, c.firstName 
     ORDER BY totalSpent DESC
     """)
@@ -52,11 +60,11 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("SELECT COUNT(o) FROM Order o WHERE o.client.id = :clientId")
     Long countOrdersByClientId(@Param("clientId") Long clientId);
 
-    @Query("SELECT COALESCE(SUM(o.totalAmount), 0) FROM Order o WHERE o.client.id = :clientId")
+    @Query("SELECT COALESCE(SUM(o.finalAmount), 0) FROM Order o WHERE o.status IN ('COMPLETED', 'DELIVERED') AND o.client.id = :clientId")
     BigDecimal getTotalSpentByClientId(@Param("clientId") Long clientId);
 
     @Query("SELECT MAX(o.orderDatetime) FROM Order o WHERE o.client.id = :clientId")
-    LocalDateTime getLastOrderDateByClientId(@Param("clientId") Long clientId);
+    Instant getLastOrderDateByClientId(@Param("clientId") Long clientId);
 
     @Query("""
         SELECT o FROM Order o 

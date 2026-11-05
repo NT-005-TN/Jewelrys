@@ -14,10 +14,12 @@ import jakarta.mail.internet.MimeMessage;
 @RequiredArgsConstructor
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @org.springframework.beans.factory.annotation.Value("${app.public-base-url:http://localhost:8080/api}")
+    private String baseUrl;
 
     public void sendVerificationEmail(String to, String token){
-        String link = "http://localhost:8080/api/auth/verify-email?token=" + token;
+        String link = baseUrl + "/auth/verify-email?token=" + token;
         String subject = "Подтверждение email для ювелирной мастерской";
         String htmlContent = "<html><body>" +
                 "<h2>Добро пожаловать!</h2>" +
@@ -39,23 +41,12 @@ public class EmailService {
         sendHtmlEmail(to, subject, htmlContent);
     }
 
-    private void sendHtmlEmail(String to, String subject, String htmlContent){
-        try {
-            MimeMessage mimeMessage = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, "utf-8");
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlContent, true);
-            mailSender.send(mimeMessage);
-            log.info("Email отправлен на {}", to);
-        } catch(MessagingException e) {
-            log.error("Не удалось отправить email на {}: {}", to, e.getMessage());
-            throw new RuntimeException("Не удалось отправить email", e);
-        }
+    private void sendHtmlEmail(String to, String subject, String htmlContent) {
+        jdbc.update("insert into email_outbox(recipient, subject, body) values (?, ?, ?)", to, subject, htmlContent);
     }
 
     public void sendPasswordResetEmail(String to, String token) {
-        String link = "http://localhost:8080/api/auth/reset-password-form?token=" + token;
+        String link = baseUrl + "/auth/reset-password-form#token=" + token;
         String subject = "Сброс пароля для ювелирной мастерской";
         String htmlContent = "<html><body>" +
                 "<h2>Сброс пароля</h2>" +

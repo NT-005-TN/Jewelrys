@@ -39,7 +39,7 @@ public class AuthServiceImpl implements AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthenticationManager authenticationManager;
     private final EmailService emailService;
-    private final StringRedisTemplate redisTemplate;
+
 
     @Override
     @Transactional
@@ -86,6 +86,7 @@ public class AuthServiceImpl implements AuthService {
     }
 
     @Override
+    @Transactional
     public AuthResponseDTO login(LoginRequestDTO request) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
@@ -93,26 +94,27 @@ public class AuthServiceImpl implements AuthService {
         SecurityContextHolder.getContext().setAuthentication(authentication);
 
         UserDetailsImpl userDetails = (UserDetailsImpl) authentication.getPrincipal();
-        User user = userRepository.findByEmail(userDetails.getEmail())
+        User user = userRepository.findLockedByEmail(userDetails.getEmail())
                 .orElseThrow(() -> new UserNotFoundException("Пользователь с таким email не найден"));
 
+        if (!user.isEnabled() || !passwordUtil.matches(request.getPassword(), user.getPasswordHash())) {
+            throw new org.springframework.security.authentication.BadCredentialsException("Invalid credentials");
+        }
         if (!user.isEmailVerified()) {
             throw new InvalidTokenException("Email не подтверждён. Проверьте вашу почту.");
         }
 
+        user.revokeSessions();
+        authentication = new UsernamePasswordAuthenticationToken(UserDetailsImpl.build(user), null, userDetails.getAuthorities());
         String accessToken = jwtTokenProvider.generateToken(authentication);
         String refreshToken = jwtTokenProvider.generateRefreshToken(authentication);
 
-        redisTemplate.opsForValue().set(
-                "refresh_token:" + userDetails.getEmail(),
-                refreshToken,
-                Duration.ofMillis(jwtTokenProvider.getRefreshExpiration())
-        );
+        user.setRefreshTokenHash(hashToken(refreshToken));
 
         String fullName = user.getUsername();
         if (user.getRole() == User.Role.CLIENT) {
             Client client = clientRepository.findByUserId(user.getId())
-                    .orElseThrow(() -> new RuntimeException("Профиль клиента не найден"));
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Профиль клиента не найден"));
             fullName = client.getFullName();
         }
 
@@ -125,7 +127,7 @@ public class AuthServiceImpl implements AuthService {
         return AuthResponseDTO.builder()
                 .accessToken(accessToken)
                 .refreshToken(refreshToken)
-                .expiresIn(Constants.ACCESS_TOKEN_EXPIRE / 1000)
+                .expiresIn(jwtTokenProvider.getJwtExpiration() / 1000)
                 .user(authUser)
                 .build();
     }
@@ -136,7 +138,7 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByVerificationToken(token)
                 .orElseThrow(() -> new InvalidTokenException("Неверный токен"));
 
-        if (user.getVerificationTokenExpiresAt().isBefore(Instant.now())) {
+        if (user.getVerificationTokenExpiresAt() == null || !user.getVerificationTokenExpiresAt().isAfter(Instant.now())) {
             throw new InvalidTokenException("Токен подтверждения email истёк");
         }
 
@@ -152,19 +154,40 @@ public class AuthServiceImpl implements AuthService {
     }
 
     private String generateUniqueUsername(String firstName, String lastName) {
-        String base = (firstName + "." + lastName).toLowerCase().replaceAll("[^a-z0-9.]", "");
-        String username = base;
-        int counter = 1;
-        while (userRepository.existsByUsername(username)) {
-            username = base + counter++;
+        String base = (firstName + "." + lastName).toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^\\p{L}0-9.]", "");
+        if (base.length() > 15) base = base.substring(0, 15);
+        return base + "-" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private static String hashToken(String token) {
+        try {
+            return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
         }
-        return username;
+    }
+
+    private User sessionUser(String token) {
+        if (!jwtTokenProvider.validateRefreshToken(token)) throw new InvalidTokenException("Неверный токен");
+        User user = userRepository.findLockedById(Long.valueOf(jwtTokenProvider.getSubject(token)))
+                .orElseThrow(() -> new InvalidTokenException("Сессия не найдена"));
+        if (!user.isEnabled() || !user.isEmailVerified()
+                || !jwtTokenProvider.matchesVersion(token, user.getTokenVersion())
+                || !hashToken(token).equals(user.getRefreshTokenHash())) {
+            throw new InvalidTokenException("Сессия недействительна");
+        }
+        return user;
     }
 
     @Override
+    @Transactional
     public void initiatePasswordReset(String email) {
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UserNotFoundException("Пользователь с таким email не найден"));
+        User user = userRepository.findByEmail(email).orElse(null);
+        if (user == null) {
+            return;
+        }
 
         String token = UUID.randomUUID().toString();
         user.setPasswordResetToken(token);
@@ -181,7 +204,7 @@ public class AuthServiceImpl implements AuthService {
         User user = userRepository.findByPasswordResetToken(token)
                 .orElseThrow(() -> new InvalidTokenException("Неверный токен сброса пароля"));
 
-        if (user.getPasswordResetTokenExpiresAt().isBefore(Instant.now())) {
+        if (user.getPasswordResetTokenExpiresAt() == null || !user.getPasswordResetTokenExpiresAt().isAfter(Instant.now())) {
             throw new InvalidTokenException("Токен сброса пароля истёк");
         }
 
@@ -197,35 +220,14 @@ public class AuthServiceImpl implements AuthService {
     @Override
     @Transactional
     public void logout(String refreshToken) {
-        if (!jwtTokenProvider.validateToken(refreshToken)) {
-            throw new InvalidTokenException("Неверный refresh токен");
-        }
-        String email = jwtTokenProvider.getEmailFromJwt(refreshToken);
-        String storedToken = redisTemplate.opsForValue().get("refresh_token:" + email);
-        if (storedToken == null || !storedToken.equals(refreshToken)) {
-            throw new InvalidTokenException("Refresh токен недействителен");
-        }
-        redisTemplate.delete("refresh_token:" + email);
+        sessionUser(refreshToken).revokeSessions();
     }
 
     @Override
     @Transactional
     public AuthResponseDTO refreshToken(RefreshTokenRequestDTO request) {
         String refreshToken = request.getRefreshToken();
-        if (!jwtTokenProvider.validateToken(refreshToken)) {
-            throw new InvalidTokenException("Неверный refresh токен");
-        }
-
-        String email = jwtTokenProvider.getEmailFromJwt(refreshToken);
-        String redisKey = "refresh_token:" + email;
-
-        String storedToken = redisTemplate.opsForValue().get(redisKey);
-        if (storedToken == null || !storedToken.equals(refreshToken)) {
-            throw new InvalidTokenException("Refresh токен недействителен или просрочен");
-        }
-
-        User user = userRepository.findByEmail(email)
-                .orElseThrow(() -> new UserNotFoundException("Пользователь не найден"));
+        User user = sessionUser(refreshToken);
 
         Authentication authentication = new UsernamePasswordAuthenticationToken(
                 UserDetailsImpl.build(user), null, UserDetailsImpl.build(user).getAuthorities()
@@ -234,16 +236,12 @@ public class AuthServiceImpl implements AuthService {
         String newAccessToken = jwtTokenProvider.generateToken(authentication);
         String newRefreshToken = jwtTokenProvider.generateRefreshToken(authentication);
 
-        redisTemplate.opsForValue().set(
-                "refresh_token:" + email,
-                newRefreshToken,
-                Duration.ofMillis(jwtTokenProvider.getRefreshExpiration())
-        );
+        user.setRefreshTokenHash(hashToken(newRefreshToken));
 
         String fullName = user.getUsername();
         if (User.Role.CLIENT.equals(user.getRole())) {
             Client client = clientRepository.findByUserId(user.getId())
-                    .orElseThrow(() -> new RuntimeException("Профиль клиента не найден"));
+                    .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Профиль клиента не найден"));
             fullName = client.getFullName();
         }
 
@@ -257,7 +255,7 @@ public class AuthServiceImpl implements AuthService {
         return AuthResponseDTO.builder()
                 .accessToken(newAccessToken)
                 .refreshToken(newRefreshToken)
-                .expiresIn(Constants.ACCESS_TOKEN_EXPIRE / 1000)
+                .expiresIn(jwtTokenProvider.getJwtExpiration() / 1000)
                 .user(authUser)
                 .build();
     }
@@ -266,10 +264,9 @@ public class AuthServiceImpl implements AuthService {
     @Transactional
     public void resetUserPassword(Long userId, String newPassword) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new RuntimeException("Пользователь не найден"));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Пользователь не найден"));
         user.setPasswordHash(passwordUtil.encode(newPassword));
         userRepository.save(user);
 
-        redisTemplate.delete("refresh_token:" + user.getEmail());
     }
 }

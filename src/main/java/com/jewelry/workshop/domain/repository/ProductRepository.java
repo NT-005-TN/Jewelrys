@@ -16,6 +16,10 @@ import java.util.Optional;
 
 @Repository
 public interface ProductRepository extends JpaRepository<Product, Long> {
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Product e where e.id = :id")
+    java.util.Optional<Product> findLockedById(@Param("id") Long id);
+
 
     boolean existsBySku(String sku);
 
@@ -24,12 +28,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     @Query("""
         SELECT p,
-               COUNT(oi) as orderCount,
-               SUM(oi.quantity) as totalSold,
-               SUM(oi.totalPrice) as totalRevenue
+               COUNT(DISTINCT CASE WHEN oi.order.status IN ('COMPLETED','DELIVERED') THEN oi.order.id ELSE NULL END) as orderCount,
+               COALESCE(SUM(CASE WHEN oi.order.status IN ('COMPLETED','DELIVERED') THEN oi.quantity ELSE 0 END), 0) as totalSold,
+               COALESCE(SUM(CASE WHEN oi.order.status IN ('COMPLETED','DELIVERED') THEN oi.totalPrice ELSE 0 END), 0) as totalRevenue
         FROM Product p 
         LEFT JOIN OrderItem oi ON p.id = oi.product.id 
-        AND oi.createdAt BETWEEN :startDate AND :endDate
+        AND oi.order.orderDatetime BETWEEN :startDate AND :endDate
         GROUP BY p 
         ORDER BY totalRevenue DESC NULLS LAST
         """)
@@ -69,6 +73,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Page<Product> findByInStockLessThanEqual(@Param("threshold") Integer threshold, Pageable pageable);
 
     @Modifying
-    @Query("UPDATE Product p SET p.inStock = p.inStock - :quantity WHERE p.id = :productId AND p.inStock >= :quantity")
+    @Query("UPDATE Product p SET p.inStock = p.inStock - :quantity WHERE p.id = :productId AND p.inStock >= :quantity AND p.isAvailable = true AND :quantity > 0")
     int decreaseStockIfAvailable(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 }

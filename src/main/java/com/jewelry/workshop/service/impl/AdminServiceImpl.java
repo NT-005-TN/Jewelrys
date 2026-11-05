@@ -62,7 +62,7 @@ public class AdminServiceImpl implements AdminService {
         return auditLogRepository.findAll(pageable)
                 .map(log -> new AuditLogDTO(
                         log.getId(),
-                        log.getUser().getUsername(),
+                        log.getUser() == null ? "system" : log.getUser().getUsername(),
                         log.getAction(),
                         log.getTableName(),
                         log.getRecordId(),

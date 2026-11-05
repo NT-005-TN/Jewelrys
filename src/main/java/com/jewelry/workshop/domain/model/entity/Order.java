@@ -24,6 +24,7 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @org.hibernate.annotations.Generated(event = org.hibernate.generator.EventType.INSERT)
     @Column(name = "order_number", nullable = false, unique = true, insertable = false)
     private Long orderNumber;
 

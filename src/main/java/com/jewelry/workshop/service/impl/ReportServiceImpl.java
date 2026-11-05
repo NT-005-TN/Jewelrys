@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
 
+@org.springframework.transaction.annotation.Transactional(readOnly = true)
 @Service
 @RequiredArgsConstructor
 public class ReportServiceImpl implements ReportService {
@@ -27,15 +28,20 @@ public class ReportServiceImpl implements ReportService {
     private final ClientRepository clientRepository;
     private final ProductRepository productRepository;
 
+    private void validatePeriod(Instant start, Instant end) {
+        if (start == null || end == null || start.isAfter(end)) {
+            throw new IllegalArgumentException("Начало периода должно быть не позднее конца");
+        }
+    }
+
     @Override
     public SalesReportDTO getSalesReport(Instant start, Instant end) {
-        LocalDateTime startDate = LocalDateTime.ofInstant(start, ZoneId.systemDefault());
-        LocalDateTime endDate = LocalDateTime.ofInstant(end, ZoneId.systemDefault());
+        validatePeriod(start, end);
+        LocalDateTime startDate = LocalDateTime.ofInstant(start, java.time.ZoneOffset.UTC);
+        LocalDateTime endDate = LocalDateTime.ofInstant(end, java.time.ZoneOffset.UTC);
 
         List<Object[]> stats = orderRepository.getClientStatisticsInPeriod(start, end);
-        long totalOrders = orderRepository.findOrdersByCriteria(
-                null, null, start, end, null, null, PageRequest.of(0, 1)
-        ).getTotalElements();
+        long totalOrders = stats.stream().mapToLong(row -> ((Number) row[3]).longValue()).sum();
 
         BigDecimal totalRevenue = stats.stream()
                 .map(row -> (BigDecimal) row[4])
@@ -61,12 +67,10 @@ public class ReportServiceImpl implements ReportService {
         }
 
         BigDecimal avgOrderValue = totalOrders > 0
-                ? totalRevenue.divide(BigDecimal.valueOf(totalOrders), 2, BigDecimal.ROUND_HALF_UP)
+                ? totalRevenue.divide(BigDecimal.valueOf(totalOrders), 2, java.math.RoundingMode.HALF_UP)
                 : BigDecimal.ZERO;
 
-        BigDecimal totalDiscounts = orderRepository.findByOrderDatetimeBetween(startDate, endDate).stream()
-                .map(Order::getDiscountAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal totalDiscounts = orderRepository.sumDiscounts(start, end);
 
         String finalMostPopularProduct = mostPopularProduct;
         String finalMostActiveClient = mostActiveClient;
@@ -85,37 +89,18 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public ClientReportDTO getClientReport(Instant start, Instant end) {
+        validatePeriod(start, end);
         long totalClients = clientRepository.count();
         long permanentClients = clientRepository.countPermanentClients();
-        long newClients = clientRepository.countNewClientsSince(start);
-
-        double avgOrdersPerClient = totalClients > 0
-                ? (double) orderRepository.count() / totalClients
-                : 0.0;
-
-        BigDecimal totalSpentAll = orderRepository.findAll().stream()
-                .map(Order::getFinalAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal averageLTV = totalClients > 0
-                ? totalSpentAll.divide(BigDecimal.valueOf(totalClients), 2, BigDecimal.ROUND_HALF_UP)
-                : BigDecimal.ZERO;
-
-        String topClientByRevenue = "Нет данных";
-        String topClientByOrders = "Нет данных";
-
-        var topClients = clientRepository.getPermanentClientDetails(PageRequest.of(0, 1));
-        if (!topClients.isEmpty()) {
-            Object[] top = topClients.get(0);
-            Client client = (Client) top[0];
-            topClientByRevenue = client.getFullName();
-        }
-
-        var stats = clientRepository.getClientStatistics(start, end, null);
-        if (!stats.isEmpty()) {
-            Object[] top = stats.get(0);
-            Client client = (Client) top[0];
-            topClientByOrders = client.getFullName();
-        }
+        long newClients = clientRepository.countByCreatedAtBetween(start, end);
+        var stats = orderRepository.getClientStatisticsInPeriod(start, end);
+        long periodOrders = stats.stream().mapToLong(row -> ((Number) row[3]).longValue()).sum();
+        double avgOrdersPerClient = totalClients == 0 ? 0 : (double) periodOrders / totalClients;
+        BigDecimal averageLTV = totalClients == 0 ? BigDecimal.ZERO : orderRepository.lifetimeRevenue()
+                .divide(BigDecimal.valueOf(totalClients), 2, java.math.RoundingMode.HALF_UP);
+        String topClientByRevenue = stats.isEmpty() ? "Нет данных" : stats.get(0)[1] + " " + stats.get(0)[2];
+        String topClientByOrders = stats.stream().max(java.util.Comparator.comparingLong(row -> ((Number) row[3]).longValue()))
+                .map(row -> row[1] + " " + row[2]).orElse("Нет данных");
 
         String finalTopClientByOrders = topClientByOrders;
         String finalTopClientByRevenue = topClientByRevenue;
@@ -132,13 +117,14 @@ public class ReportServiceImpl implements ReportService {
 
     @Override
     public List<ProductReportItemDTO> getProductReport(Instant start, Instant end) {
+        validatePeriod(start, end);
         var stats = productRepository.getProductSalesStatistics(start, end, PageRequest.of(0, 100));
 
         return stats.stream().map(row -> {
             Product product = (Product) row[0];
             Long orderCount = ((Number) row[1]).longValue();
-            Long totalSold = ((Number) row[2]).longValue();
-            BigDecimal totalRevenue = (BigDecimal) row[3];
+            Long totalSold = row[2] == null ? 0L : ((Number) row[2]).longValue();
+            BigDecimal totalRevenue = row[3] == null ? BigDecimal.ZERO : (BigDecimal) row[3];
 
             ProductReportItemDTO dto = new ProductReportItemDTO();
             dto.setProductId(product.getId());

@@ -32,6 +32,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
 
         if (!rateLimitService.isAllowed(key, rateLimit.maxAttempts(), rateLimit.windowMinutes())) {
             response.setStatus(429);
+            response.setContentType("text/plain;charset=UTF-8");
             response.getWriter().write("Слишком много запросов. Попробуйте позже.");
             return false;
         }
@@ -40,16 +41,7 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     }
 
     private String getClientIpAddress(HttpServletRequest request) {
-        String xForwardedFor = request.getHeader("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty() && !"unknown".equalsIgnoreCase(xForwardedFor)) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-
-        String xRealIp = request.getHeader("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty() && !"unknown".equalsIgnoreCase(xRealIp)) {
-            return xRealIp;
-        }
-
+        // Only trust forwarded headers after configuring a trusted proxy.
         return request.getRemoteAddr();
     }
 }

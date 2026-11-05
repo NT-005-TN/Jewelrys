@@ -2,6 +2,9 @@
 .gitignore
 .gradle
 build
-*.log
 .idea
+*.log
 *.iml
+.env
+*.env
+outputs

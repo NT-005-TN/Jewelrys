@@ -61,24 +61,17 @@ public class OrderServiceImpl implements OrderService {
                 .orElseThrow(() -> new UnauthorizedAccessException("Клиент не найден"));
 
         Set<OrderItem> items = new HashSet<>();
-        for (var itemDto : dto.getItems()) {
-            // Атомарно пытаемся уменьшить остаток
-            int updated = productRepository.decreaseStockIfAvailable(itemDto.getProductId(), itemDto.getQuantity());
-            if (updated == 0) {
-                Product product = productRepository.findById(itemDto.getProductId())
-                        .orElseThrow(() -> new RuntimeException("Товар с ID " + itemDto.getProductId() + " не найден"));
-                throw new RuntimeException(
-                        "Недостаточно товара \"" + product.getName() + "\" на складе. Доступно: " +
-                                product.getInStock() + ", запрошено: " + itemDto.getQuantity()
-                );
+        if (dto.getItems() == null || dto.getItems().isEmpty()) {
+            throw new IllegalArgumentException("Заказ должен содержать товары");
+        }
+        for (var itemDto : dto.getItems().stream()
+                .sorted(Comparator.comparing(com.jewelry.workshop.domain.model.dto.orderitem.OrderItemCreateDTO::getProductId)).toList()) {
+            Product product = productRepository.findLockedById(itemDto.getProductId())
+                    .orElseThrow(() -> new EntityNotFoundException("Товар не найден"));
+            if (!Boolean.TRUE.equals(product.getIsAvailable())) {
+                throw new IllegalArgumentException("Товар недоступен для заказа");
             }
-
-            Product product = productRepository.findById(itemDto.getProductId())
-                    .orElseThrow(() -> new RuntimeException("Товар с ID " + itemDto.getProductId() + " не найден"));
-
-            if (!product.isAvailableForSale()) {
-                throw new RuntimeException("Товар \"" + product.getName() + "\" недоступен для заказа");
-            }
+            product.decreaseStock(itemDto.getQuantity());
 
             OrderItem item = new OrderItem();
             item.setProduct(product);
@@ -103,7 +96,7 @@ public class OrderServiceImpl implements OrderService {
 
         order.calculateTotals();
 
-        Order saved = orderRepository.save(order);
+        Order saved = orderRepository.saveAndFlush(order);
         return orderMapper.toDto(saved);
     }
 
@@ -111,7 +104,7 @@ public class OrderServiceImpl implements OrderService {
     @Transactional(readOnly = true)
     public OrderResponseDTO getOrderById(Long orderId, Long requestingClientId) {
         Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Заказ не найден"));
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Заказ не найден"));
 
         if (requestingClientId != null && !order.getClient().getId().equals(requestingClientId)) {
             throw new UnauthorizedAccessException("Доступ запрещён");
@@ -123,19 +116,18 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public void cancelOrder(Long orderId, Long clientId) {
-        Order order = orderRepository.findById(orderId)
-                .orElseThrow(() -> new RuntimeException("Заказ не найден"));
+        Order order = orderRepository.findLockedById(orderId)
+                .orElseThrow(() -> new jakarta.persistence.EntityNotFoundException("Заказ не найден"));
         if (!order.getClient().getId().equals(clientId)) {
             throw new UnauthorizedAccessException("Доступ запрещён");
         }
+        if (Order.STATUS_CANCELLED.equals(order.getStatus())) return;
         if (!order.canBeCancelled()) {
-            throw new RuntimeException("Невозможно отменить заказ со статусом: " + order.getStatus());
+            throw new IllegalArgumentException("Невозможно отменить заказ со статусом: " + order.getStatus());
         }
         order.cancel();
 
-        for (OrderItem item : order.getOrderItems()) {
-            item.getProduct().increaseStock(item.getQuantity());
-        }
+        restoreStock(order);
 
         orderRepository.save(order);
     }
@@ -160,7 +152,7 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Статус не может быть пустым");
         }
 
-        Order order = orderRepository.findById(orderId)
+        Order order = orderRepository.findLockedById(orderId)
                 .orElseThrow(() -> new EntityNotFoundException("Заказ с ID " + orderId + " не найден"));
 
         User currentUser = userRepository.findById(currentUserId)
@@ -175,6 +167,7 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("Недопустимый статус: " + newStatus);
         }
 
+        if (newStatus.equals(order.getStatus())) return;
         if (!isAllowedTransition(order.getStatus(), newStatus)) {
             throw new IllegalStateException(
                     "Невозможно изменить статус с '" + order.getStatus() + "' на '" + newStatus + "'");
@@ -183,35 +176,28 @@ public class OrderServiceImpl implements OrderService {
         order.updateStatus(newStatus);
 
         if (Order.STATUS_CANCELLED.equals(newStatus)) {
-            for (OrderItem item : order.getOrderItems()) {
-                item.getProduct().increaseStock(item.getQuantity());
-            }
+            restoreStock(order);
         }
 
         orderRepository.save(order);
     }
 
+    private void restoreStock(Order order) {
+        order.getOrderItems().stream().sorted(Comparator.comparing(i -> i.getProduct().getId()))
+                .forEach(item -> productRepository.findLockedById(item.getProduct().getId())
+                        .orElseThrow(() -> new EntityNotFoundException("Товар не найден"))
+                        .increaseStock(item.getQuantity()));
+    }
+
     private boolean isAllowedTransition(String currentStatus, String newStatus) {
         if (currentStatus == null || newStatus == null) return false;
-
-        if (Order.STATUS_CANCELLED.equals(currentStatus)) {
-            return false;
-        }
-
-        if (Order.STATUS_COMPLETED.equals(currentStatus) || Order.STATUS_DELIVERED.equals(currentStatus)) {
-            return Order.STATUS_CANCELLED.equals(newStatus);
-        }
-
-        if (Order.STATUS_PENDING.equals(currentStatus)) {
-            return List.of(Order.STATUS_PROCESSING, Order.STATUS_COMPLETED, Order.STATUS_CANCELLED)
-                    .contains(newStatus);
-        }
-
-        if (Order.STATUS_PROCESSING.equals(currentStatus)) {
-            return List.of(Order.STATUS_COMPLETED, Order.STATUS_CANCELLED).contains(newStatus);
-        }
-
-        return true;
+        return switch (currentStatus) {
+            case Order.STATUS_PENDING -> Set.of(Order.STATUS_PROCESSING, Order.STATUS_COMPLETED, Order.STATUS_CANCELLED).contains(newStatus);
+            case Order.STATUS_PROCESSING -> Set.of(Order.STATUS_COMPLETED, Order.STATUS_CANCELLED).contains(newStatus);
+            case Order.STATUS_COMPLETED -> Set.of(Order.STATUS_DELIVERED, Order.STATUS_CANCELLED).contains(newStatus);
+            case Order.STATUS_DELIVERED -> Order.STATUS_CANCELLED.equals(newStatus);
+            default -> false;
+        };
     }
 
     @Override
@@ -223,8 +209,7 @@ public class OrderServiceImpl implements OrderService {
         List<Object[]> results = orderRepository.getDailyRevenue(startDate);
 
         return results.stream().map(row -> {
-            java.sql.Date sqlDate = (java.sql.Date) row[0];
-            LocalDate localDate = sqlDate.toLocalDate();
+            LocalDate localDate = row[0] instanceof LocalDate date ? date : ((java.sql.Date) row[0]).toLocalDate();
 
             Long orderCount = ((Number) row[1]).longValue();
             BigDecimal dailyRevenue = safeToBigDecimal(row[2]);

@@ -15,7 +15,7 @@ public class OrderCreateDTO {
 
     @NotEmpty(message = "Заказ должен содержать хотя бы один товар")
     @Schema(description = "Список товаров в заказе", required = true)
-    private List<@Valid OrderItemCreateDTO> items;
+    private List<@NotNull @Valid OrderItemCreateDTO> items;
 
     @Schema(description = "Примечания к заказу", example = "Нужно доставить к 25 декабря")
     private String notes;

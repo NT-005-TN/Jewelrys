@@ -5,6 +5,8 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @Slf4j
+@org.springframework.scheduling.annotation.EnableScheduling
+@org.springframework.transaction.annotation.EnableTransactionManagement(order = 0)
 @SpringBootApplication
 public class JewelryWorkshopApplication {
 

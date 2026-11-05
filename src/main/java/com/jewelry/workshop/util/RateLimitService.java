@@ -2,44 +2,27 @@ package com.jewelry.workshop.util;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
-
 import java.time.Duration;
+import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class RateLimitService {
-
     private final StringRedisTemplate redisTemplate;
+    private static final DefaultRedisScript<Long> INCREMENT = new DefaultRedisScript<>("""
+            local count = redis.call('INCR', KEYS[1])
+            if count == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end
+            return count
+            """, Long.class);
 
     public boolean isAllowed(String key, int maxAttempts, int windowMinutes) {
-        String attemptsKey = "rate_limit:" + key;
-        String timeKey = "rate_limit_time:" + key;
-
-        String attemptsStr = redisTemplate.opsForValue().get(attemptsKey);
-        String timeStr = redisTemplate.opsForValue().get(timeKey);
-
-        long attempts = attemptsStr != null ? Long.parseLong(attemptsStr) : 0;
-        long now = System.currentTimeMillis();
-
-        if (timeStr != null) {
-            long time = Long.parseLong(timeStr);
-            if (now - time > Duration.ofMinutes(windowMinutes).toMillis()) {
-                redisTemplate.delete(attemptsKey);
-                redisTemplate.delete(timeKey);
-                attempts = 0;
-            }
+        if (maxAttempts <= 0 || windowMinutes <= 0) {
+            throw new IllegalArgumentException("Rate limit and window must be positive");
         }
-
-        if (attempts >= maxAttempts) {
-            return false;
-        }
-
-        redisTemplate.opsForValue().set(attemptsKey, String.valueOf(attempts + 1), Duration.ofMinutes(windowMinutes));
-        if (attempts == 0) {
-            redisTemplate.opsForValue().set(timeKey, String.valueOf(now), Duration.ofMinutes(windowMinutes));
-        }
-
-        return true;
+        Long count = redisTemplate.execute(INCREMENT, List.of("rate_limit:" + key),
+                Long.toString(Duration.ofMinutes(windowMinutes).toMillis()));
+        return count != null && count <= maxAttempts;
     }
 }

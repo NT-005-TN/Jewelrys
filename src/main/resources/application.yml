@@ -5,7 +5,7 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/jewelry_workshop
     username: postgres
-    password: 197326
+    password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 10
@@ -17,10 +17,11 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
-        format_sql: true
+        format_sql: false
+        default_batch_fetch_size: 64
         jdbc:
           batch_size: 20
-    show-sql: true
+    show-sql: false
 
   flyway:
     enabled: true
@@ -31,24 +32,28 @@ spring:
   mail:
     host: smtp.gmail.com
     port: 587
-    username: ntrukhina005@gmail.com
-    password: ydsyryfckcajfrwk  # <-- Не пароль от почты, а специальный "App Password"
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
     properties:
       mail:
         smtp:
           auth: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
           starttls:
             enable: true
-  redis:
-    host: localhost
-    port: 6379
-    # password: redis-password
-    timeout: 2000ms
-    lettuce:
-      pool:
-        max-active: 8
-        max-idle: 8
-        min-idle: 0
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      # password: redis-password
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
   security:
     password:
       min-length: 6
@@ -59,11 +64,13 @@ server:
     context-path: /api
 
 logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId}]"
   level:
-    com.jewelry.workshop: DEBUG
+    com.jewelry.workshop: INFO
     org.springframework.web: INFO
     org.hibernate.SQL: WARN
-    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
 
 springdoc:
   api-docs:
@@ -74,13 +81,24 @@ springdoc:
     tags-sorter: alpha
 
 app:
+  public-base-url: ${PUBLIC_BASE_URL:http://localhost:8080/api}
   jwt:
-    secret: LCiw+ElTEH1oiQYUPm+1qkvCaCbP6Lpe1eLsKh8Lpgi02gcvWlRpI5OxULIVIVwlp0+615OtoNimgmzp83cWew==
+    secret: ${APP_JWT_SECRET}
     expiration: 900000
     refresh:
       expiration: 604800000
   init:
     admin:
-      username: "admin"
-      email: "admin@jewelry.local"
-      password: "admin123"
+      username: ${ADMIN_USERNAME:admin}
+      email: ${ADMIN_EMAIL:admin@jewelry.local}
+      password: ${ADMIN_PASSWORD:}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+      probes:
+        enabled: true

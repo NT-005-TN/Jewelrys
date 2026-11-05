@@ -6,8 +6,6 @@ import com.jewelry.workshop.domain.repository.ProductRepository;
 import com.jewelry.workshop.service.interfaces.ProductService;
 import com.jewelry.workshop.service.mapper.ProductMapper;
 import jakarta.persistence.EntityNotFoundException;
-import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -74,11 +72,6 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional(readOnly = true)
-    @Cacheable(
-            value = "products",
-            key = "{#p0, #userRole}",
-            unless = "#result == null || #result.price.compareTo(T(java.math.BigDecimal).valueOf(200000L)) > 0"
-    )
     public ProductResponseDTO getProductById(Long productId, String userRole) {
         if (productId == null || productId <= 0) {
             throw new IllegalArgumentException("ID изделия должен быть положительным числом");
@@ -98,7 +91,7 @@ public class ProductServiceImpl implements ProductService {
     @Transactional
     public ProductResponseDTO createProduct(ProductCreateDTO dto) {
         if (dto.getSku() != null && productRepository.existsBySku(dto.getSku())) {
-            throw new RuntimeException("Артикул " + dto.getSku() + " уже существует");
+            throw new IllegalArgumentException("Артикул " + dto.getSku() + " уже существует");
         }
         Product product = new Product();
         product.setName(dto.getName());
@@ -115,9 +108,8 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "products", key = "#id")
     public ProductResponseDTO updateProduct(Long id, ProductUpdateDTO dto) {
-        Product product = productRepository.findById(id)
+        Product product = productRepository.findLockedById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Изделие не найдено"));
 
         if (dto.getName() != null) product.setName(dto.getName());
@@ -137,7 +129,6 @@ public class ProductServiceImpl implements ProductService {
 
     @Override
     @Transactional
-    @CacheEvict(value = "products", key = "#id")
     public void deleteProduct(Long id) {
         if (!productRepository.existsById(id)) {
             throw new EntityNotFoundException("Изделие не найдено");
@@ -158,7 +149,7 @@ public class ProductServiceImpl implements ProductService {
             throw new IllegalArgumentException("Остаток не может быть отрицательным");
         }
 
-        Product product = productRepository.findById(id)
+        Product product = productRepository.findLockedById(id)
                 .orElseThrow(() -> new EntityNotFoundException("Изделие не найдено"));
 
         product.setInStock(newStock);
