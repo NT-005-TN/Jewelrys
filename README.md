@@ -102,8 +102,10 @@ X-Request-ID связывает ответ с логами. Health открыт,
 Redis не обходится молча. Не доверяем входящим X-Forwarded-For/X-Real-IP: за reverse proxy
 необходимо отдельно настроить доверенные прокси и очистку forwarded-заголовков.
 
-Dependabot и dependency review добавлены в `.github`; они начнут работать после
-публикации в GitHub. Их конфигурация не означает, что удалённый CI уже прошёл.
+Dependabot и dependency review добавлены в `.github`. Java checks для опубликованного
+кода прошёл с PostgreSQL 15 и Redis 7:
+https://github.com/NT-005-TN/Jewelrys/actions/runs/42078669518.
+Dependency review запускается отдельно для pull request.
 
 Зависимости сверены с официальной документацией:
 - https://docs.spring.io/spring-boot/3.5/appendix/dependency-versions/coordinates.html
