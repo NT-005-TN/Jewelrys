@@ -44,7 +44,7 @@ dependencies {
 
     implementation("org.springframework.boot:spring-boot-starter-mail")
 
-    implementation("com.opencsv:opencsv:5.7.1")
+    implementation("com.opencsv:opencsv:5.12.0")
 
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
 }
